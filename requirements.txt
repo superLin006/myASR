@@ -1,0 +1,39 @@
+# ======================
+# 基础 PyTorch 生态
+# ======================
+torch==2.4.1
+torchvision==0.20.0
+torchaudio==2.4.1
+numpy==1.24.3
+
+# ======================
+# 语音识别与相关工具
+# ======================
+openai-whisper==20250625
+funasr==1.2.7
+transformers==4.46.3
+sentencepiece==0.2.2
+sacremoses==0.1.1
+huggingface_hub==0.34.4
+ffmpeg==1.4
+
+# ======================
+# 音频处理
+# ======================
+pyaudio==0.2.14
+PyAudioWPatch==0.2.12.5
+Wave==0.0.2
+
+# ======================
+# 界面开发
+# ======================
+customtkinter==5.1.3
+
+# ======================
+# 其他工具
+# ======================
+openai==0.27.6
+pytz==2025.2
+
+# 可选：若有GPU加速需求且CUDA版本合适，可以加入
+# --extra-index-url https://download.pytorch.org/whl/cu118

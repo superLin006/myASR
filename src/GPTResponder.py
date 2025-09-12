@@ -4,8 +4,8 @@ import tempfile
 import wave
 import pyaudio
 from threading import Thread, Lock
-from keys import OPENAI_API_KEY
-from prompts import create_prompt, INITIAL_RESPONSE
+from ai.keys import OPENAI_API_KEY
+from ai.prompts import create_prompt, INITIAL_RESPONSE
 import time
 import os
 
