@@ -1,4 +1,4 @@
-# TranscriberModels.py
+# transcriberModels.py
 import os
 import sys
 import torch
@@ -8,9 +8,7 @@ from funasr import AutoModel
 
 def resource_path(relative_path):
     """
-    获取资源文件的绝对路径：
-      - PyInstaller 打包后放在 sys._MEIPASS
-      - 开发环境下放在脚本同级目录
+    获取资源文件的绝对路径： 
     """
     # PyInstaller 创建临时文件夹，会把路径存到 _MEIPASS
     base_path = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))

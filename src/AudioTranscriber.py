@@ -1,4 +1,4 @@
-# AudioTranscriber.py
+# audioTranscriber.py
 
 import os
 import sys

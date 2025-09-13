@@ -1,4 +1,4 @@
-# AudioRecorder.py
+# audioRecorder.py
 import custom_speech_recognition as sr
 import pyaudiowpatch as pyaudio
 import pytz
