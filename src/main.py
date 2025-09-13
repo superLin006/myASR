@@ -1,5 +1,4 @@
 # main.py
-
 import threading
 import queue
 import time
@@ -7,7 +6,6 @@ import subprocess
 import argparse
 import tkinter as tk
 import customtkinter as ctk
-
 from aiResponder import GPTResponder
 from audioRecorder import DefaultMicRecorder, DefaultSpeakerRecorder
 from audioTranscriber import AudioTranscriber
