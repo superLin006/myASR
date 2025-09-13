@@ -1,224 +1,220 @@
-# custom_speech_recognition/__init__.py
-# 最小化版本 —— 仅服务 AudioRecorder.py
+"""
+最小化 custom_speech_recognition
+仅保留录音相关功能，删除所有 ASR 引擎。
+"""
 import io
-import math
-import audioop
 import collections
-import threading
+import audioop
+import math
 import time
+from .audio import AudioData
+from .exceptions import WaitTimeoutError
 
-# ---------------- 异常 ----------------
-class WaitTimeoutError(Exception): pass
-class UnknownValueError(Exception): pass
+__all__ = ['Microphone', 'AudioFile', 'Recognizer', 'AudioData', 'WaitTimeoutError']
 
-
-
-# ---------------- AudioData ----------------
-class AudioData(object):
-    """
-    只保留 get_raw_data() —— AudioRecorder.record_into_queue() 会调用它。
-    其余格式转换方法全部删除。
-    """
-    def __init__(self, frame_data, sample_rate, sample_width):
-        self.frame_data = frame_data
-        self.sample_rate = sample_rate
-        self.sample_width = sample_width
-
-    def get_raw_data(self, convert_rate=None, convert_width=None):
-        """
-        返回 PCM 原始字节；AudioRecorder 需要它。
-        这里只处理最简单的 rate/width 转换，够用即可。
-        """
-        data = self.frame_data
-        if convert_rate is not None and convert_rate != self.sample_rate:
-            # 简单线性重采样，够用
-            data, _ = audioop.ratecv(data, self.sample_width, 1,
-                                     self.sample_rate, convert_rate, None)
-        if convert_width is not None and convert_width != self.sample_width:
-            data = audioop.lin2lin(data, self.sample_width, convert_width)
-        return data
-
-
-# ---------------- AudioSource 基类 ----------------
-class AudioSource(object):
+# ====================== AudioSource 骨架 ======================
+class AudioSource:
     def __enter__(self): raise NotImplementedError
     def __exit__(self, *args): raise NotImplementedError
 
-
-# ---------------- Microphone ----------------
-try:
-    import pyaudiowpatch as _pyaudio
-except ImportError:
-    raise AttributeError("AudioRecorder 依赖 pyaudiowpatch，请先安装")
-
+# ====================== Microphone ======================
 class Microphone(AudioSource):
     def __init__(self, device_index=None, sample_rate=None, chunk_size=1024,
                  speaker=False, channels=1):
         self.speaker = speaker
-        self.format = _pyaudio.paInt16
-        self.SAMPLE_WIDTH = _pyaudio.get_sample_size(self.format)
-        self.CHUNK = chunk_size
-        self.channels = channels
-
-        audio = _pyaudio.PyAudio()
+        self.pyaudio_module = self._get_pyaudio()
+        audio = self.pyaudio_module.PyAudio()
         try:
+            if device_index is None:
+                info = audio.get_default_input_device_info()
+            else:
+                info = audio.get_device_info_by_index(device_index)
             if sample_rate is None:
-                dev = audio.get_device_info_by_index(
-                    device_index) if device_index is not None else audio.get_default_input_device_info()
-                sample_rate = int(dev["defaultSampleRate"])
+                sample_rate = int(info['defaultSampleRate'])
         finally:
             audio.terminate()
 
-        self.SAMPLE_RATE = sample_rate
         self.device_index = device_index
+        self.format = self.pyaudio_module.paInt16
+        self.SAMPLE_WIDTH = self.pyaudio_module.get_sample_size(self.format)
+        self.SAMPLE_RATE = sample_rate
+        self.CHUNK = chunk_size
+        self.channels = channels
         self.audio = None
         self.stream = None
 
+    @staticmethod
+    def _get_pyaudio():
+        try:
+            import pyaudiowpatch as pyaudio
+        except ImportError:
+            raise AttributeError("需要 pyaudiowpatch")
+        return pyaudio
+
     def __enter__(self):
-        assert self.stream is None, "上下文管理器不可重入"
-        self.audio = _pyaudio.PyAudio()
+        assert self.stream is None
+        self.audio = self.pyaudio_module.PyAudio()
         try:
             self.stream = self.audio.open(
-                format=self.format,
-                channels=self.channels,
-                rate=self.SAMPLE_RATE,
-                input=True,
                 input_device_index=self.device_index,
-                frames_per_buffer=self.CHUNK
+                channels=self.channels,
+                format=self.format,
+                rate=self.SAMPLE_RATE,
+                frames_per_buffer=self.CHUNK,
+                input=True
             )
         except Exception:
             self.audio.terminate()
             raise
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *args):
         try:
             self.stream.close()
         finally:
             self.stream = None
             self.audio.terminate()
 
+# ====================== AudioFile（可选） ======================
+class AudioFile(AudioSource):
+    def __init__(self, filename_or_fileobject):
+        self.filename_or_fileobject = filename_or_fileobject
+        self.stream = None
+        self.DURATION = None
+        self.audio_reader = None
+        self.SAMPLE_RATE = None
+        self.SAMPLE_WIDTH = None
+        self.CHUNK = 4096
 
-# ---------------- Recognizer （仅保留录音相关） ----------------
-class Recognizer(AudioSource):
+    def __enter__(self):
+        import wave, aifc, audioop
+        try:
+            self.audio_reader = wave.open(self.filename_or_fileobject, 'rb')
+            little_endian = True
+        except (wave.Error, EOFError):
+            try:
+                self.audio_reader = aifc.open(self.filename_or_fileobject, 'rb')
+                little_endian = False
+            except (aifc.Error, EOFError):
+                raise ValueError("仅支持 WAV/AIFF")
+        assert 1 <= self.audio_reader.getnchannels() <= 2
+        self.SAMPLE_WIDTH = self.audio_reader.getsampwidth()
+        self.SAMPLE_RATE = self.audio_reader.getframerate()
+        self.stream = AudioFileStream(self.audio_reader, little_endian)
+        self.DURATION = self.audio_reader.getnframes() / float(self.SAMPLE_RATE)
+        return self
+
+    def __exit__(self, *args):
+        if hasattr(self.filename_or_fileobject, 'read'):
+            self.audio_reader.close()
+        self.stream = None
+        self.DURATION = None
+
+class AudioFileStream:
+    def __init__(self, reader, little_endian):
+        self.reader = reader
+        self.little_endian = little_endian
+    def read(self, size=-1):
+        frames = self.reader.readframes(size)
+        if not self.little_endian and self.reader.getsampwidth() != 1:
+            frames = audioop.byteswap(frames, self.reader.getsampwidth())
+        if self.reader.getnchannels() != 1:
+            frames = audioop.tomono(frames, self.reader.getsampwidth(), 1, 1)
+        return frames
+
+# ====================== Recognizer（仅录音） ======================
+class Recognizer:
     def __init__(self):
         self.energy_threshold = 300
         self.dynamic_energy_threshold = True
         self.dynamic_energy_adjustment_damping = 0.15
         self.dynamic_energy_ratio = 1.5
         self.pause_threshold = 0.8
-        self.phrase_threshold = 0.3
         self.non_speaking_duration = 0.5
+        self.phrase_threshold = 0.3
         self.operation_timeout = None
-
-    # ---------- 以下四个方法是 AudioRecorder 真正会调用的 ----------
-    def record(self, source, duration=None, offset=None):
-        assert isinstance(source, AudioSource) and source.stream is not None
-        frames = io.BytesIO()
-        seconds_per_buffer = float(source.CHUNK) / source.SAMPLE_RATE
-        elapsed = offset_time = 0
-        offset_reached = False
-        while True:
-            if offset and not offset_reached:
-                offset_time += seconds_per_buffer
-                if offset_time > offset:
-                    offset_reached = True
-            buf = source.stream.read(source.CHUNK)
-            if not buf:
-                break
-            if offset_reached or not offset:
-                elapsed += seconds_per_buffer
-                if duration and elapsed > duration:
-                    break
-                frames.write(buf)
-        return AudioData(frames.getvalue(), source.SAMPLE_RATE, source.SAMPLE_WIDTH)
 
     def adjust_for_ambient_noise(self, source, duration=1):
         assert isinstance(source, AudioSource) and source.stream is not None
-        seconds_per_buffer = float(source.CHUNK) / source.SAMPLE_RATE
+        secs = source.CHUNK / float(source.SAMPLE_RATE)
         elapsed = 0
         while elapsed < duration:
-            elapsed += seconds_per_buffer
+            elapsed += secs
             buf = source.stream.read(source.CHUNK)
             energy = audioop.rms(buf, source.SAMPLE_WIDTH)
-            if self.dynamic_energy_threshold:
-                damping = self.dynamic_energy_adjustment_damping ** seconds_per_buffer
-                target = energy * self.dynamic_energy_ratio
-                self.energy_threshold = self.energy_threshold * damping + target * (1 - damping)
+            damp = self.dynamic_energy_adjustment_damping ** secs
+            target = energy * self.dynamic_energy_ratio
+            self.energy_threshold = self.energy_threshold * damp + target * (1 - damp)
 
     def listen(self, source, timeout=None, phrase_time_limit=None):
         assert isinstance(source, AudioSource) and source.stream is not None
-        seconds_per_buffer = float(source.CHUNK) / source.SAMPLE_RATE
-        pause_buffer_count = int(math.ceil(self.pause_threshold / seconds_per_buffer))
-        phrase_buffer_count = int(math.ceil(self.phrase_threshold / seconds_per_buffer))
-        non_speaking_buffer_count = int(math.ceil(self.non_speaking_duration / seconds_per_buffer))
+        secs = float(source.CHUNK) / source.SAMPLE_RATE
+        pause_buffer_count = int(math.ceil(self.pause_threshold / secs))
+        phrase_buffer_count = int(math.ceil(self.phrase_threshold / secs))
+        non_speaking_buffer_count = int(math.ceil(self.non_speaking_duration / secs))
 
         elapsed = 0
+        frames = collections.deque()
         while True:
-            frames = collections.deque()
-            # 1. 等待语音开始
-            while True:
-                elapsed += seconds_per_buffer
-                if timeout and elapsed > timeout:
-                    raise WaitTimeoutError("listening timed out")
-                buf = source.stream.read(source.CHUNK)
-                if not buf:
-                    break
-                frames.append(buf)
-                if len(frames) > non_speaking_buffer_count:
-                    frames.popleft()
-                energy = audioop.rms(buf, source.SAMPLE_WIDTH)
-                if energy > self.energy_threshold:
-                    break
-                if self.dynamic_energy_threshold:
-                    damping = self.dynamic_energy_adjustment_damping ** seconds_per_buffer
-                    target = energy * self.dynamic_energy_ratio
-                    self.energy_threshold = self.energy_threshold * damping + target * (1 - damping)
-            # 2. 录制直到停顿
-            pause_count, phrase_count = 0, 0
-            phrase_start = elapsed
-            while True:
-                elapsed += seconds_per_buffer
-                if phrase_time_limit and elapsed - phrase_start > phrase_time_limit:
-                    break
-                buf = source.stream.read(source.CHUNK)
-                if not buf:
-                    break
-                frames.append(buf)
-                phrase_count += 1
-                energy = audioop.rms(buf, source.SAMPLE_WIDTH)
-                if energy > self.energy_threshold:
-                    pause_count = 0
-                else:
-                    pause_count += 1
-                if pause_count > pause_buffer_count:
-                    break
-            phrase_count -= pause_count
-            if phrase_count >= phrase_buffer_count or not buf:
+            elapsed += secs
+            if timeout and elapsed > timeout:
+                raise WaitTimeoutError("listening timed out")
+            buf = source.stream.read(source.CHUNK)
+            if len(buf) == 0: break
+            frames.append(buf)
+            if len(frames) > non_speaking_buffer_count:
+                frames.popleft()
+            energy = audioop.rms(buf, source.SAMPLE_WIDTH)
+            if energy > self.energy_threshold:
                 break
-        # 去掉末尾多余静音
+            if self.dynamic_energy_threshold:
+                damp = self.dynamic_energy_adjustment_damping ** secs
+                target = energy * self.dynamic_energy_ratio
+                self.energy_threshold = self.energy_threshold * damp + target * (1 - damp)
+
+        pause_count, phrase_count = 0, 0
+        phrase_start = elapsed
+        while True:
+            elapsed += secs
+            if phrase_time_limit and elapsed - phrase_start > phrase_time_limit:
+                break
+            buf = source.stream.read(source.CHUNK)
+            if len(buf) == 0: break
+            frames.append(buf)
+            phrase_count += 1
+            energy = audioop.rms(buf, source.SAMPLE_WIDTH)
+            if energy > self.energy_threshold:
+                pause_count = 0
+            else:
+                pause_count += 1
+            if pause_count > pause_buffer_count:
+                break
+
+        phrase_count -= pause_count
+        if phrase_count < phrase_buffer_count and len(buf) != 0:
+            return self.listen(source, timeout, phrase_time_limit)
+
         for _ in range(pause_count - non_speaking_buffer_count):
             frames.pop()
-        return AudioData(b"".join(frames), source.SAMPLE_RATE, source.SAMPLE_WIDTH)
+        frame_data = b''.join(frames)
+        return AudioData(frame_data, source.SAMPLE_RATE, source.SAMPLE_WIDTH)
 
     def listen_in_background(self, source, callback, phrase_time_limit=None):
         assert isinstance(source, AudioSource)
         running = [True]
-
         def threaded_listen():
             with source as s:
                 while running[0]:
                     try:
-                        audio = self.listen(s, timeout=1, phrase_time_limit=phrase_time_limit)
+                        audio = self.listen(s, 1, phrase_time_limit)
                     except WaitTimeoutError:
                         pass
                     else:
                         if running[0]:
                             callback(self, audio)
-
+        import threading
         listener_thread = threading.Thread(target=threaded_listen, daemon=True)
         listener_thread.start()
-
         def stopper(wait_for_stop=True):
             running[0] = False
             if wait_for_stop:

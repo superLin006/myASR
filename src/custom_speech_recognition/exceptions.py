@@ -1,0 +1,1 @@
+class WaitTimeoutError(Exception): pass

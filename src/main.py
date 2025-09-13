@@ -1,4 +1,5 @@
 # main.py
+
 import threading
 import queue
 import time
@@ -6,6 +7,8 @@ import subprocess
 import argparse
 import tkinter as tk
 import customtkinter as ctk
+
+from translator import Translator
 from aiResponder import GPTResponder
 from audioRecorder import DefaultMicRecorder, DefaultSpeakerRecorder
 from audioTranscriber import AudioTranscriber
@@ -175,13 +178,15 @@ def main():
 
     threading.Thread(target=audio_merger, daemon=True).start()
 
+    # 初始化翻译器
+    translator = Translator(args.mt_backend, args.mt_model_name)
+
     # 初始化转写器
     transcriber = AudioTranscriber(
         mic_rec.source,
         spk_rec.source,
         asr_model,
-        args.mt_backend,
-        args.mt_model_name
+        translator
     )
     threading.Thread(
         target=transcriber.transcribe_audio_queue,
