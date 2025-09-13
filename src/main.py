@@ -8,10 +8,10 @@ import argparse
 import tkinter as tk
 import customtkinter as ctk
 
-from GPTResponder import GPTResponder
-from AudioRecorder import DefaultMicRecorder, DefaultSpeakerRecorder
-from AudioTranscriber import AudioTranscriber
-from TranscriberModels import load_asr_model
+from aiResponder import GPTResponder
+from audioRecorder import DefaultMicRecorder, DefaultSpeakerRecorder
+from audioTranscriber import AudioTranscriber
+from transcriberModels import load_asr_model
 
 def write_in_textbox(textbox, text):
     textbox.delete("1.0", "end")
