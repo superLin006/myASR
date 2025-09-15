@@ -1,1 +1,0 @@
-class WaitTimeoutError(Exception): pass
