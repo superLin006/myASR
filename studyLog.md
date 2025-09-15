@@ -3,7 +3,6 @@
 尝试拿一些小的模型量化，看看效果
 
 
-```markdown
 # 🎙️ myASR —— 你的实时语音“万能小助手”
 ![demo](https://user-images.githubusercontent.com/xxx/xxx.svg)  
 （点我 2× 速度看 30s 演示，音量预警⚠️）
@@ -46,8 +45,17 @@
 ---
 
 ## 🥈 命令行 · 5 分钟自建
-<details>
-<summary>📖 展开 / 收起</summary>
+&lt;details&gt;
+&lt;summary&gt;📖 展开 / 收起&lt;/summary&gt;
+
+### ① 克隆 + 创建虚拟环境
+```bash
+git clone https://github.com/yourname/myASR.git && cd myASR
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# macOS / Linux
+source venv/bin/activate
 
 ### ① 克隆 + 创建虚拟环境
 ```bash
