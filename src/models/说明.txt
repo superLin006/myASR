@@ -1,0 +1,13 @@
+用到的各种模型文件放在这里
+1.ASR (funasr、whisper)
+2.Translate （m2m100_418m、helsinki_nlp）
+
+具体的目录如下
+funasr
+    paraformer-speech-xxx
+    punc_ct-transformer-xxx
+    speech_fsmn_vad
+whisper
+    xxx.pt
+m2m100_418m
+helsinki_nlp
