@@ -42,11 +42,9 @@ def download_asr():
         device="cpu"
     )
 
-    # 2.3 Whisper 全尺寸（openai/whisper 仓库权重）
+    # 2.3 Whisper （openai/whisper 仓库权重）
     print("↓ Whisper 全系列")
-    for sz in ("tiny", "tiny.en", "base", "base.en",
-               "small", "small.en", "medium", "medium.en",
-               "large", "large-v2", "large-v3", "turbo"):
+    for sz in ("tiny", "tiny.en","small", "turbo"):
         whisper.load_model(sz, download_root=str(cache / "whisper"))   # 仅下载
 
 # ========== 主入口 ==========
